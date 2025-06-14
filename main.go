@@ -1,0 +1,404 @@
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/eiannone/keyboard"
+)
+
+type vec struct{ x, y int }
+
+type ship struct {
+	pos vec
+}
+
+type alien struct {
+	pos   vec
+	typ   int
+	alive bool
+}
+
+type bullet struct {
+	pos    vec
+	active bool
+}
+
+const (
+	frameWidth  = 60
+	frameHeight = 20
+	alienRows   = 3
+	alienCols   = 6
+)
+
+var (
+	player        ship
+	aliens        []alien
+	playerBullets []bullet
+	alienBullets  []bullet
+	score         int
+	gameOver      bool
+	frame         [][]rune
+	clearScreen   func()
+	alienSpeed    = 500 * time.Millisecond
+	lastAlienMove time.Time
+	alienDir      = 1 // 1 = right, -1 = left
+)
+
+func init() {
+	// Initialize clear screen command based on OS
+	if runtime.GOOS == "windows" {
+		clearScreen = func() {
+			cmd := exec.Command("cmd", "/c", "cls")
+			cmd.Stdout = os.Stdout
+			cmd.Run()
+		}
+	} else {
+		clearScreen = func() {
+			fmt.Print("\033[H\033[2J")
+		}
+	}
+
+	// Initialize frame buffer
+	frame = make([][]rune, frameHeight)
+	for i := range frame {
+		frame[i] = make([]rune, frameWidth)
+	}
+}
+
+func initGame() {
+	player = ship{pos: vec{x: frameWidth / 2, y: frameHeight - 2}}
+	aliens = make([]alien, 0, alienRows*alienCols)
+	playerBullets = make([]bullet, 0, 3)
+	alienBullets = make([]bullet, 0, 5)
+	alienDir = 1
+	lastAlienMove = time.Now()
+
+	// Create aliens in grid pattern
+	for y := range alienRows {
+		for x := range alienCols {
+			aliens = append(aliens, alien{
+				pos:   vec{x: 10 + x*7, y: 3 + y*2},
+				typ:   y,
+				alive: true,
+			})
+		}
+	}
+	score = 0
+	gameOver = false
+}
+
+func drawSprite(x, y int, sprite string) {
+	lines := strings.Split(sprite, "\n")
+	for i, line := range lines {
+		row := y + i
+		if row < 0 || row >= frameHeight {
+			continue
+		}
+		for j, ch := range line {
+			col := x + j
+			if col >= 0 && col < frameWidth {
+				frame[row][col] = ch
+			}
+		}
+	}
+}
+
+func clearFrame() {
+	for y := range frame {
+		for x := range frame[y] {
+			if y == frameHeight-1 {
+				frame[y][x] = '-'
+			} else {
+				frame[y][x] = ' '
+			}
+		}
+	}
+}
+
+func draw() {
+	clearFrame()
+
+	// Draw player
+	if !gameOver {
+		drawSprite(player.pos.x, player.pos.y, "/#\\")
+	}
+
+	// Draw bullets
+	for _, b := range playerBullets {
+		if b.active {
+			drawSprite(b.pos.x, b.pos.y, "o")
+		}
+	}
+	for _, b := range alienBullets {
+		if b.active {
+			drawSprite(b.pos.x, b.pos.y, "x")
+		}
+	}
+
+	// Draw aliens
+	alienSprites := []string{
+		" /xx\\",         // Type 0
+		"<xxxx>",         // Type 1
+		" xxxx \n /xx\\", // Type 2
+	}
+
+	for _, a := range aliens {
+		if a.alive {
+			drawSprite(a.pos.x, a.pos.y, alienSprites[a.typ])
+		}
+	}
+
+	// Draw score
+	scoreStr := fmt.Sprintf("Score: %d", score)
+	if len(scoreStr) > frameWidth {
+		scoreStr = scoreStr[:frameWidth]
+	}
+	for i, ch := range scoreStr {
+		if i < frameWidth {
+			frame[0][i] = ch
+		}
+	}
+
+	// Draw game over
+	if gameOver {
+		msg := "Game Over! Press 'r' to restart or 'q' to quit"
+		startX := max(frameWidth/2-len(msg)/2, 0)
+		for i, ch := range msg {
+			x := startX + i
+			if x < frameWidth {
+				frame[frameHeight/2][x] = ch
+			}
+		}
+	}
+
+	// Render frame
+	clearScreen()
+	for y := range frameHeight {
+		fmt.Println(string(frame[y]))
+	}
+}
+
+// FIXED: Proper bounding box collision detection
+func isColliding(bulletPos vec, alienPos vec) bool {
+	// Alien bounding box: 6 characters wide, 2 tall
+	return bulletPos.x >= alienPos.x &&
+		bulletPos.x <= alienPos.x+5 &&
+		bulletPos.y >= alienPos.y &&
+		bulletPos.y <= alienPos.y+1
+}
+
+func updatePlayerBullets() {
+	newBullets := playerBullets[:0]
+	for _, b := range playerBullets {
+		if !b.active || b.pos.y <= 0 {
+			continue
+		}
+
+		newPos := vec{x: b.pos.x, y: b.pos.y - 1}
+		hit := false
+
+		// Check collision with aliens using bounding boxes
+		for i := range aliens {
+			if !aliens[i].alive {
+				continue
+			}
+			if isColliding(newPos, aliens[i].pos) {
+				aliens[i].alive = false
+				score += (aliens[i].typ + 1) * 10
+				hit = true
+				break
+			}
+		}
+
+		if !hit {
+			b.pos = newPos
+			newBullets = append(newBullets, b)
+		}
+	}
+	playerBullets = newBullets
+}
+
+func updateAlienBullets() {
+	newBullets := alienBullets[:0]
+	for _, b := range alienBullets {
+		if !b.active || b.pos.y >= frameHeight-1 {
+			continue
+		}
+
+		b.pos.y++
+		// Check collision with player (player is 3 characters wide)
+		if b.pos.y == player.pos.y &&
+			b.pos.x >= player.pos.x &&
+			b.pos.x <= player.pos.x+2 {
+			gameOver = true
+		}
+		newBullets = append(newBullets, b)
+	}
+	alienBullets = newBullets
+}
+
+func moveAliens() {
+	if time.Since(lastAlienMove) < alienSpeed {
+		return
+	}
+	lastAlienMove = time.Now()
+
+	// Check if we need to change direction and move down
+	changeDir := false
+	for _, a := range aliens {
+		if !a.alive {
+			continue
+		}
+		if (alienDir == 1 && a.pos.x >= frameWidth-7) ||
+			(alienDir == -1 && a.pos.x <= 1) {
+			changeDir = true
+			break
+		}
+	}
+
+	if changeDir {
+		alienDir *= -1
+		// Move all aliens down
+		for i := range aliens {
+			if aliens[i].alive {
+				aliens[i].pos.y++
+				// Check if alien reached bottom
+				if aliens[i].pos.y >= frameHeight-3 {
+					gameOver = true
+					return
+				}
+			}
+		}
+	} else {
+		// Move horizontally
+		for i := range aliens {
+			if aliens[i].alive {
+				aliens[i].pos.x += alienDir
+			}
+		}
+	}
+}
+
+func alienShoot() {
+	if len(alienBullets) >= 5 || rand.Intn(100) > 15 {
+		return
+	}
+
+	// Find lowest alien in each column
+	columnAliens := make(map[int]int) // x -> index of lowest alien
+	for i, a := range aliens {
+		if !a.alive {
+			continue
+		}
+		if idx, ok := columnAliens[a.pos.x]; !ok || aliens[idx].pos.y < a.pos.y {
+			columnAliens[a.pos.x] = i
+		}
+	}
+
+	// Pick random alien from the lowest ones
+	if len(columnAliens) > 0 {
+		keys := make([]int, 0, len(columnAliens))
+		for k := range columnAliens {
+			keys = append(keys, k)
+		}
+		alienIdx := columnAliens[keys[rand.Intn(len(keys))]]
+		alienBullets = append(alienBullets, bullet{
+			pos:    vec{x: aliens[alienIdx].pos.x + 2, y: aliens[alienIdx].pos.y + 2},
+			active: true,
+		})
+	}
+}
+
+func checkWin() {
+	for _, a := range aliens {
+		if a.alive {
+			return
+		}
+	}
+	gameOver = true
+}
+
+func updateGame() {
+	updatePlayerBullets()
+	updateAlienBullets()
+	moveAliens()
+	alienShoot()
+	checkWin()
+}
+
+func main() {
+	if err := keyboard.Open(); err != nil {
+		panic(err)
+	}
+	defer keyboard.Close()
+
+	initGame()
+	frameTime := time.Second / 20 // 20 FPS is sufficient
+	ticker := time.NewTicker(frameTime)
+	defer ticker.Stop()
+
+	keyChan := make(chan keyboard.Key, 10)
+	go func() {
+		for {
+			char, key, err := keyboard.GetKey()
+			if err != nil {
+				continue
+			}
+			if key != 0 {
+				keyChan <- key
+			} else {
+				switch char {
+				case 'q', 'r', 'a', 'd', ' ':
+					keyChan <- keyboard.Key(char)
+				}
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-ticker.C:
+			if !gameOver {
+				updateGame()
+			}
+			draw()
+
+		case key := <-keyChan:
+			if gameOver {
+				switch key {
+				case 'r':
+					initGame()
+				case 'q':
+					return
+				}
+				continue
+			}
+
+			switch key {
+			case keyboard.KeyArrowLeft, 'a':
+				if player.pos.x > 1 {
+					player.pos.x--
+				}
+			case keyboard.KeyArrowRight, 'd':
+				if player.pos.x < frameWidth-4 {
+					player.pos.x++
+				}
+			case keyboard.KeySpace:
+				if len(playerBullets) < 3 {
+					playerBullets = append(playerBullets, bullet{
+						pos:    vec{x: player.pos.x + 1, y: player.pos.y - 1},
+						active: true,
+					})
+				}
+			case 'q':
+				return
+			}
+		}
+	}
+}
