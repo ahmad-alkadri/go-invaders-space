@@ -31,6 +31,7 @@ const (
 	frameHeight = 20
 	alienRows   = 3
 	alienCols   = 6
+	fps         = 20 // Frame per seconds
 )
 
 var (
@@ -40,11 +41,17 @@ var (
 	alienBullets  []bullet
 	score         int
 	gameOver      bool
+	gameWon       bool
 	frame         [][]rune
-	prevFrame     [][]rune // Add previous frame buffer
+	prevFrame     [][]rune
 	alienSpeed    = 500 * time.Millisecond
 	lastAlienMove time.Time
-	alienDir      = 1 // 1 = right, -1 = left
+	alienDir      = 1
+	alienSprites  = []string{
+		"/o  o\\",
+		"  oo  \n<xxxx>",
+		" xxxx \n /oo\\",
+	}
 )
 
 func init() {
@@ -66,10 +73,10 @@ func initGame() {
 	lastAlienMove = time.Now()
 
 	// Create aliens in grid pattern
-	for y := 0; y < alienRows; y++ {
-		for x := 0; x < alienCols; x++ {
+	for y := range alienRows {
+		for x := range alienCols {
 			aliens = append(aliens, alien{
-				pos:   vec{x: 10 + x*7, y: 3 + y*2},
+				pos:   vec{x: 10 + x*7, y: 3 + y*3},
 				typ:   y,
 				alive: true,
 			})
@@ -128,12 +135,6 @@ func draw() {
 	}
 
 	// Draw aliens
-	alienSprites := []string{
-		" /xx\\",         // Type 0
-		"<xxxx>",         // Type 1
-		" xxxx \n /xx\\", // Type 2
-	}
-
 	for _, a := range aliens {
 		if a.alive {
 			drawSprite(a.pos.x, a.pos.y, alienSprites[a.typ])
@@ -153,7 +154,13 @@ func draw() {
 
 	// Draw game over
 	if gameOver {
-		msg := "Game Over! Press 'r' to restart or 'q' to quit"
+		var msg string
+		if gameWon {
+			msg = "You Won! Press 'r' to play again or 'q' to quit"
+		} else {
+			msg = "Game Over! Press 'r' to restart or 'q' to quit"
+		}
+
 		startX := max(frameWidth/2-len(msg)/2, 0)
 		for i, ch := range msg {
 			x := startX + i
@@ -165,8 +172,8 @@ func draw() {
 
 	// Efficient rendering: only update changed cells
 	fmt.Print("\033[H") // Move cursor to top-left
-	for y := 0; y < frameHeight; y++ {
-		for x := 0; x < frameWidth; x++ {
+	for y := range frameHeight {
+		for x := range frameWidth {
 			// Only print if cell changed
 			if frame[y][x] != prevFrame[y][x] {
 				fmt.Printf("\033[%d;%dH%c", y+1, x+1, frame[y][x])
@@ -278,12 +285,12 @@ func moveAliens() {
 }
 
 func alienShoot() {
-	if len(alienBullets) >= 5 || rand.Intn(100) > 15 {
+	if len(alienBullets) >= 5 {
 		return
 	}
 
 	// Find lowest alien in each column
-	columnAliens := make(map[int]int) // x -> index of lowest alien
+	columnAliens := make(map[int]int)
 	for i, a := range aliens {
 		if !a.alive {
 			continue
@@ -293,18 +300,38 @@ func alienShoot() {
 		}
 	}
 
-	// Pick random alien from the lowest ones
-	if len(columnAliens) > 0 {
-		keys := make([]int, 0, len(columnAliens))
-		for k := range columnAliens {
-			keys = append(keys, k)
-		}
-		alienIdx := columnAliens[keys[rand.Intn(len(keys))]]
-		alienBullets = append(alienBullets, bullet{
-			pos:    vec{x: aliens[alienIdx].pos.x + 2, y: aliens[alienIdx].pos.y + 2},
-			active: true,
-		})
+	if len(columnAliens) == 0 {
+		return
 	}
+
+	keys := make([]int, 0, len(columnAliens))
+	for k := range columnAliens {
+		keys = append(keys, k)
+	}
+
+	alienIdx := columnAliens[keys[rand.Intn(len(keys))]]
+	typ := aliens[alienIdx].typ
+
+	// Adjusted shooting chance: top aliens shoot more often
+	var chance int
+	switch typ {
+	case 0: // Top row
+		chance = 15 // Highest chance (15%)
+	case 1: // Middle row
+		chance = 10 // Medium chance (10%)
+	case 2: // Bottom row
+		chance = 5 // Lowest chance (5%)
+	}
+
+	// Only shoot if random value is within the chance threshold
+	if rand.Intn(100) > chance {
+		return
+	}
+
+	alienBullets = append(alienBullets, bullet{
+		pos:    vec{x: aliens[alienIdx].pos.x + 2, y: aliens[alienIdx].pos.y + 2},
+		active: true,
+	})
 }
 
 func checkWin() {
@@ -314,6 +341,7 @@ func checkWin() {
 		}
 	}
 	gameOver = true
+	gameWon = true
 }
 
 func updateGame() {
@@ -322,6 +350,19 @@ func updateGame() {
 	moveAliens()
 	alienShoot()
 	checkWin()
+
+	// Increase speed as aliens are eliminated
+	aliveCount := 0
+	for _, a := range aliens {
+		if a.alive {
+			aliveCount++
+		}
+	}
+	if aliveCount < len(aliens)/2 {
+		alienSpeed = 300 * time.Millisecond
+	} else {
+		alienSpeed = 500 * time.Millisecond
+	}
 }
 
 func max(a, b int) int {
@@ -345,7 +386,7 @@ func main() {
 	defer keyboard.Close()
 
 	initGame()
-	frameTime := time.Second / 20 // 20 FPS is sufficient
+	frameTime := time.Second / time.Duration(fps)
 	ticker := time.NewTicker(frameTime)
 	defer ticker.Stop()
 
@@ -381,6 +422,7 @@ func main() {
 				case 'r':
 					initGame()
 				case 'q':
+					fmt.Print("\033[2J\033[H")
 					return
 				}
 				continue
@@ -403,6 +445,7 @@ func main() {
 					})
 				}
 			case 'q':
+				fmt.Print("\033[2J\033[H")
 				return
 			}
 		}

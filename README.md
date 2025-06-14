@@ -22,14 +22,25 @@ A simple Space Invaders-style game written in Go for the terminal.
 
 ## How to Run
 1. Clone or download this repository.
-2. Open a terminal in the project directory.
-3. Run:
+
+   ```sh
+   git clone https://github.com/ahmad-alkadri/go-invaders-space.git
+   ```
+
+2. Open a terminal in the project directory and run.
+
    ```sh
    go run main.go
    ```
 
+3. Alternatively, you can build it:
+   ```sh
+   go build -o go-invaders-space
+   ./go-invaders-space
+   ```
+
 ## Notes
-- On Windows, the screen will clear using `cls`.
+- Tested extensively on `bash`, not yet on Windows
 - Uses the [eiannone/keyboard](https://github.com/eiannone/keyboard) package for keyboard input.
 
 Enjoy blasting some aliens!
