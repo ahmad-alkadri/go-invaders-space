@@ -3,9 +3,6 @@ package main
 import (
 	"fmt"
 	"math/rand"
-	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -44,30 +41,19 @@ var (
 	score         int
 	gameOver      bool
 	frame         [][]rune
-	clearScreen   func()
+	prevFrame     [][]rune // Add previous frame buffer
 	alienSpeed    = 500 * time.Millisecond
 	lastAlienMove time.Time
 	alienDir      = 1 // 1 = right, -1 = left
 )
 
 func init() {
-	// Initialize clear screen command based on OS
-	if runtime.GOOS == "windows" {
-		clearScreen = func() {
-			cmd := exec.Command("cmd", "/c", "cls")
-			cmd.Stdout = os.Stdout
-			cmd.Run()
-		}
-	} else {
-		clearScreen = func() {
-			fmt.Print("\033[H\033[2J")
-		}
-	}
-
 	// Initialize frame buffer
 	frame = make([][]rune, frameHeight)
+	prevFrame = make([][]rune, frameHeight) // Initialize previous frame buffer
 	for i := range frame {
 		frame[i] = make([]rune, frameWidth)
+		prevFrame[i] = make([]rune, frameWidth)
 	}
 }
 
@@ -80,8 +66,8 @@ func initGame() {
 	lastAlienMove = time.Now()
 
 	// Create aliens in grid pattern
-	for y := range alienRows {
-		for x := range alienCols {
+	for y := 0; y < alienRows; y++ {
+		for x := 0; x < alienCols; x++ {
 			aliens = append(aliens, alien{
 				pos:   vec{x: 10 + x*7, y: 3 + y*2},
 				typ:   y,
@@ -177,10 +163,16 @@ func draw() {
 		}
 	}
 
-	// Render frame
-	clearScreen()
-	for y := range frameHeight {
-		fmt.Println(string(frame[y]))
+	// Efficient rendering: only update changed cells
+	fmt.Print("\033[H") // Move cursor to top-left
+	for y := 0; y < frameHeight; y++ {
+		for x := 0; x < frameWidth; x++ {
+			// Only print if cell changed
+			if frame[y][x] != prevFrame[y][x] {
+				fmt.Printf("\033[%d;%dH%c", y+1, x+1, frame[y][x])
+				prevFrame[y][x] = frame[y][x]
+			}
+		}
 	}
 }
 
@@ -332,7 +324,21 @@ func updateGame() {
 	checkWin()
 }
 
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func main() {
+	// Clear screen and hide cursor at start
+	fmt.Print("\033[2J\033[H\033[?25l")
+	defer func() {
+		// Show cursor when exiting
+		fmt.Print("\033[?25h")
+	}()
+
 	if err := keyboard.Open(); err != nil {
 		panic(err)
 	}
