@@ -1,6 +1,10 @@
-# InvadersSpace
+# Go Invaders Space!
 
 A simple Space Invaders-style game written in Go for the terminal.
+
+| ![invaders](https://github.com/user-attachments/assets/acb05dbf-e65d-45ce-83e8-869cb76ff9ff) |
+| --- |
+| Game demo, played on terminal, recorded using [asciinema](https://docs.asciinema.org/) |
 
 ## Features
 - Playable in the terminal (cross-platform)
