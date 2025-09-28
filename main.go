@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -57,7 +58,7 @@ var (
 func init() {
 	// Initialize frame buffer
 	frame = make([][]rune, frameHeight)
-	prevFrame = make([][]rune, frameHeight) // Initialize previous frame buffer
+	prevFrame = make([][]rune, frameHeight) // Initialize the previous frame buffer
 	for i := range frame {
 		frame[i] = make([]rune, frameWidth)
 		prevFrame[i] = make([]rune, frameWidth)
@@ -72,9 +73,9 @@ func initGame() {
 	alienDir = 1
 	lastAlienMove = time.Now()
 
-	// Create aliens in grid pattern
-	for y := range alienRows {
-		for x := range alienCols {
+	// Create aliens in a grid pattern
+	for y := 0; y < alienRows; y++ {
+		for x := 0; x < alienCols; x++ {
 			aliens = append(aliens, alien{
 				pos:   vec{x: 10 + x*7, y: 3 + y*3},
 				typ:   y,
@@ -118,7 +119,7 @@ func draw() {
 	clearFrame()
 
 	// Draw player
-	if !gameOver {
+	if !gameOver || gameWon {
 		drawSprite(player.pos.x, player.pos.y, "/#\\")
 	}
 
@@ -172,9 +173,9 @@ func draw() {
 
 	// Efficient rendering: only update changed cells
 	fmt.Print("\033[H") // Move cursor to top-left
-	for y := range frameHeight {
-		for x := range frameWidth {
-			// Only print if cell changed
+	for y := 0; y < frameHeight; y++ {
+		for x := 0; x < frameWidth; x++ {
+			// Only print if the cell changed
 			if frame[y][x] != prevFrame[y][x] {
 				fmt.Printf("\033[%d;%dH%c", y+1, x+1, frame[y][x])
 				prevFrame[y][x] = frame[y][x]
@@ -248,7 +249,7 @@ func moveAliens() {
 	}
 	lastAlienMove = time.Now()
 
-	// Check if we need to change direction and move down
+	// Check if we need to change the direction and move down
 	changeDir := false
 	for _, a := range aliens {
 		if !a.alive {
@@ -267,7 +268,7 @@ func moveAliens() {
 		for i := range aliens {
 			if aliens[i].alive {
 				aliens[i].pos.y++
-				// Check if alien reached bottom
+				// Check if an alien reached bottom
 				if aliens[i].pos.y >= frameHeight-3 {
 					gameOver = true
 					return
@@ -289,7 +290,7 @@ func alienShoot() {
 		return
 	}
 
-	// Find lowest alien in each column
+	// Find the lowest alien in each column
 	columnAliens := make(map[int]int)
 	for i, a := range aliens {
 		if !a.alive {
@@ -323,7 +324,7 @@ func alienShoot() {
 		chance = 5 // Lowest chance (5%)
 	}
 
-	// Only shoot if random value is within the chance threshold
+	// Only shoot if a random value is within the chance threshold
 	if rand.Intn(100) > chance {
 		return
 	}
@@ -365,13 +366,6 @@ func updateGame() {
 	}
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func main() {
 	// Clear screen and hide cursor at start
 	fmt.Print("\033[2J\033[H\033[?25l")
@@ -383,7 +377,12 @@ func main() {
 	if err := keyboard.Open(); err != nil {
 		panic(err)
 	}
-	defer keyboard.Close()
+	defer func() {
+		err := keyboard.Close()
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error closing keyboard: %v\n", err)
+		}
+	}()
 
 	initGame()
 	frameTime := time.Second / time.Duration(fps)
@@ -447,6 +446,9 @@ func main() {
 			case 'q':
 				fmt.Print("\033[2J\033[H")
 				return
+			default:
+				// Keep this here for now; maybe in the future we'd like to
+				// add some logging to let user know they cannot use the key.
 			}
 		}
 	}

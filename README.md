@@ -47,4 +47,22 @@ A simple Space Invaders-style game written in Go for the terminal.
 - Tested extensively on `bash`, not yet on Windows
 - Uses the [eiannone/keyboard](https://github.com/eiannone/keyboard) package for keyboard input.
 
+## Releases and Installers
+- Automated packaging is configured via GoReleaser.
+- On Linux, .deb and .rpm packages are created.
+- On Windows and Linux, prebuilt archives (zip/tar.gz) are uploaded.
+
+### How to trigger a release (GitHub Actions)
+1. Go to the Actions tab, open the "Release" workflow, click "Run workflow".
+2. Enter a new tag like `v1.0.0` and run. The workflow will tag and publish a release with artifacts.
+3. Alternatively, push a tag `v*` to trigger the workflow automatically.
+
+### Run GoReleaser locally (optional)
+Requirements: Go and GoReleaser installed.
+
+```sh
+# snapshot build without publishing
+goreleaser release --snapshot --clean
+```
+
 Enjoy blasting some aliens!
