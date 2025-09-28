@@ -38,7 +38,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         with:
           script: |
-            const core = require('@actions/core');
             const eventName = process.env.EVENT_NAME;
             const inputTag = process.env.INPUT_TAG || '';
             const refName = process.env.REF_NAME || '';
