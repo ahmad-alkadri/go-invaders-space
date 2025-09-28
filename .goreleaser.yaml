@@ -1,0 +1,77 @@
+project_name: go-invaders-space
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: go-invaders-space
+    main: ./main.go
+    binary: go-invaders-space
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - windows
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    
+archives:
+  - id: default
+    builds:
+      - go-invaders-space
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: linux-packages
+    package_name: go-invaders-space
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Arch }}"
+    homepage: https://github.com/ahmad-alkadri/go-invaders-space
+    maintainer: Ahmad Alkadri <>
+    description: "A simple Space Invaders-style game written in Go for the terminal."
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+    contents:
+      - src: ./README.md
+        dst: /usr/share/doc/go-invaders-space/README.md
+        type: config
+      - src: ./LICENSE
+        dst: /usr/share/doc/go-invaders-space/LICENSE
+        type: config
+    overrides:
+      deb:
+        scripts:
+          postinstall: ./packaging/postinstall.sh
+      rpm:
+        scripts:
+          postinstall: ./packaging/postinstall.sh
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+
+release:
+  
+  github:
+    owner: ahmad-alkadri
+    name: go-invaders-space
+  mode: replace
+  prerelease: auto

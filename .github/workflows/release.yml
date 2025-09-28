@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag (e.g., v1.0.0) to release'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: "Guard: validate target tag vs latest release"
+        id: guard
+        uses: actions/github-script@v7
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        with:
+          script: |
+            const core = require('@actions/core');
+            const eventName = process.env.EVENT_NAME;
+            const inputTag = process.env.INPUT_TAG || '';
+            const refName = process.env.REF_NAME || '';
+            const targetTag = eventName === 'workflow_dispatch' ? inputTag : refName;
+
+            function valid(tag) {
+              return /^v\d+\.\d+\.\d+$/.test(tag);
+            }
+
+            function cmp(a, b) {
+              // returns -1 if a<b, 0 if equal, 1 if a>b (semver without prerelease/build)
+              const pa = a.replace(/^v/, '').split('.').map(Number);
+              const pb = b.replace(/^v/, '').split('.').map(Number);
+              for (let i = 0; i < 3; i++) {
+                if ((pa[i]||0) < (pb[i]||0)) return -1;
+                if ((pa[i]||0) > (pb[i]||0)) return 1;
+              }
+              return 0;
+            }
+
+            let proceed = true;
+            let reason = '';
+
+            if (!targetTag) {
+              proceed = false;
+              reason = 'No target tag detected.';
+            } else if (!valid(targetTag)) {
+              proceed = false;
+              reason = `Tag ${targetTag} does not match pattern vMAJOR.MINOR.PATCH.`;
+            }
+
+            let latestTag = '';
+            if (proceed) {
+              try {
+                const { data } = await github.rest.repos.getLatestRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                });
+                latestTag = data?.tag_name || '';
+                if (latestTag && valid(latestTag)) {
+                  const c = cmp(targetTag, latestTag);
+                  if (c < 0) {
+                    proceed = false;
+                    reason = `Tag ${targetTag} is lower than latest release ${latestTag}.`;
+                  }
+                }
+              } catch (e) {
+                // If there is no release yet (404), allow proceed
+                if (e.status === 404) {
+                  // no-op
+                } else {
+                  // Any other API error: fail safe and stop
+                  proceed = false;
+                  reason = `Failed to query latest release: ${e.message || e}`;
+                }
+              }
+            }
+
+            core.setOutput('proceed', proceed ? 'true' : 'false');
+            core.setOutput('target_tag', targetTag);
+            core.setOutput('latest_tag', latestTag);
+            core.setOutput('reason', reason);
+
+            if (!proceed) {
+              core.info(`Release skipped. ${reason}`);
+            } else {
+              core.info(`Proceeding with release for ${targetTag}. Latest release: ${latestTag || 'none'}`);
+            }
+
+      - name: Use tag input if workflow_dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' && steps.guard.outputs.proceed == 'true' }}
+        run: |
+          git fetch --tags --force
+          git checkout main
+          git pull --ff-only
+          git tag "${{ inputs.tag }}" -m "Release ${{ inputs.tag }}"
+          git push origin "${{ inputs.tag }}"
+
+      - name: Set up GoReleaser
+        if: ${{ steps.guard.outputs.proceed == 'true' }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
