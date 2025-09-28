@@ -112,7 +112,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && steps.guard.outputs.proceed == 'true' }}
         run: |
           git fetch --tags --force
-          git checkout main
+          git checkout master
           git pull --ff-only
           git tag "${{ inputs.tag }}" -m "Release ${{ inputs.tag }}"
           git push origin "${{ inputs.tag }}"

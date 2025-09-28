@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -379,7 +380,7 @@ func main() {
 	defer func() {
 		err := keyboard.Close()
 		if err != nil {
-
+			_, _ = fmt.Fprintf(os.Stderr, "Error closing keyboard: %v\n", err)
 		}
 	}()
 
@@ -446,6 +447,8 @@ func main() {
 				fmt.Print("\033[2J\033[H")
 				return
 			default:
+				// Keep this here for now; maybe in the future we'd like to
+				// add some logging to let user know they cannot use the key.
 			}
 		}
 	}
